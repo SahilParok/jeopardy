@@ -132,10 +132,15 @@ export function LobbyScreen({
         )}
 
         <div className="players-list">
+          {/* Once submitted, a player is locked in and the host runs everything, so only flag
+              "offline" for someone who still has questions to write. */}
           {room.players.map((player) => (
-            <div key={player.id} className={`pill ${player.submitted ? 'success' : ''}${!player.isConnected ? ' offline' : ''}`}>
+            <div
+              key={player.id}
+              className={`pill ${player.submitted ? 'success' : ''}${!player.submitted && !player.isConnected ? ' offline' : ''}`}
+            >
               {player.name} · {player.submitted ? 'Ready' : 'Editing'}
-              {!player.isConnected ? ' (offline)' : ''}
+              {!player.submitted && !player.isConnected ? ' (offline)' : ''}
               {isHost && player.id !== session.playerId && (
                 <button
                   type="button"
