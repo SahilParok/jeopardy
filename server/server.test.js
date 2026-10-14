@@ -665,44 +665,68 @@ test('gameStore: restarting a finished game preserves the original settings on t
 
 // --- gameStore: host judging (resolveQuestion) -------------------------------------
 
-test('gameStore: resolveQuestion awards the chosen team the points and hands them the next pick', async () => {
+test('gameStore: resolveQuestion awards the chosen team the points, and a steal does not move the pick', async () => {
   const { code, hostPlayerId, room } = await setupGame({ playerCount: 4, mode: 'infinite' });
-  const [team1, , team3] = room.teams;
+  const [team1, team2, team3] = room.teams;
   const cell = findOpenCell(room.board);
   await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
 
+  // Team 1 picked; Team 3 steals it.
   const { room: after, result } = await gameStore.resolveQuestion(code, hostPlayerId, team3.id);
 
   assert.equal(result.isCorrect, true);
   assert.equal(result.points, cell.value);
   assert.equal(after.teams.find((team) => team.id === team3.id).score, cell.value);
   assert.equal(after.teams.find((team) => team.id === team1.id).score, 0);
-  assert.equal(after.turnTeamId, team3.id);
+  assert.equal(after.turnTeamId, team2.id, 'the pick moves to the team after the picker, not to the stealer');
   assert.equal(after.activeQuestion, null);
   assert.equal(after.history.at(-1).closedReason, 'solved');
   assert.equal(after.history.at(-1).solvedByTeamId, team3.id);
   assert.equal(after.events.at(-1).type, 'attempt-correct');
 });
 
+test('gameStore: a team keeps the pick only while it answers its own questions right', async () => {
+  const { code, hostPlayerId, room } = await setupGame({ playerCount: 4, mode: 'infinite' });
+  const [t1, t2, t3, t4] = room.teams.map((team) => team.id);
+
+  let current = room;
+  const play = async (teamId) => {
+    const cell = findOpenCell(current.board);
+    await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+    ({ room: current } = await gameStore.resolveQuestion(code, hostPlayerId, teamId));
+    return current.turnTeamId;
+  };
+
+  assert.equal(current.turnTeamId, t1);
+  assert.equal(await play(t1), t1, 'Team 1 got its own pick right, so it picks again');
+  assert.equal(await play(t1), t1, '...and again');
+  assert.equal(await play(null), t2, 'All wrong passes the pick to the next team');
+  assert.equal(await play(t4), t3, 'Team 2 picked and Team 4 stole: next is Team 3, not Team 4');
+  assert.equal(await play(null), t4);
+  assert.equal(await play(t4), t4, 'Team 4 answering its own pick keeps it');
+  assert.equal(await play(t1), t1, 'Team 4 picked and Team 1 stole: the order wraps to Team 1');
+});
+
 test('gameStore: resolveQuestion logs the teams ahead of the winner in steal order as misses', async () => {
   const { code, hostPlayerId, room } = await setupGame({ playerCount: 4, mode: 'infinite' });
   const [team1, team2, team3, team4] = room.teams;
 
-  // Team 3 wins the first cell and so picks the second: steal order is 3, 4, 1, 2.
+  // Team 1 picks and Team 3 steals, so Team 2 picks next: steal order is 2, 3, 4, 1.
   const first = findOpenCell(room.board);
   await gameStore.selectQuestion(code, hostPlayerId, first.playerId, first.value);
   const { room: afterFirst } = await gameStore.resolveQuestion(code, hostPlayerId, team3.id);
+  assert.equal(afterFirst.turnTeamId, team2.id);
 
   const second = findOpenCell(afterFirst.board);
   await gameStore.selectQuestion(code, hostPlayerId, second.playerId, second.value);
-  const { room: afterSecond } = await gameStore.resolveQuestion(code, hostPlayerId, team2.id);
+  const { room: afterSecond } = await gameStore.resolveQuestion(code, hostPlayerId, team1.id);
 
   const entry = afterSecond.history.at(-1);
-  assert.equal(entry.selectedByTeamId, team3.id);
-  assert.equal(entry.solvedByTeamId, team2.id);
+  assert.equal(entry.selectedByTeamId, team2.id);
+  assert.equal(entry.solvedByTeamId, team1.id);
   assert.deepEqual(
     entry.attempts.map((attempt) => [attempt.teamId, attempt.isCorrect]),
-    [[team3.id, false], [team4.id, false], [team1.id, false], [team2.id, true]]
+    [[team2.id, false], [team3.id, false], [team4.id, false], [team1.id, true]]
   );
 });
 
