@@ -14,12 +14,29 @@ const httpServer = createServer(app);
 const persistenceWarning = gameStore.persistenceConfigError();
 
 const allowedOrigins = [process.env.CLIENT_URL, 'http://localhost:5173'].filter(Boolean);
-const corsOrigin = (origin, callback) => {
-  if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-  else callback(new Error('Not allowed by CORS'));
+
+// A request from this server's own origin always passes, whatever CLIENT_URL says. Browsers attach
+// an Origin header to same-origin module-script and Socket.IO polling requests, so an allowlist that
+// misses the deployed URL (a fork on its own Render URL, a LAN address) would reject the page's own
+// JS bundle and blank the whole site.
+const isSameOrigin = (req, origin) => {
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;
+  }
 };
 
-app.use(cors({ origin: corsOrigin }));
+const corsFor = (extraOptions = {}) => (req, callback) => {
+  const origin = req.headers.origin;
+  if (!origin || isSameOrigin(req, origin) || allowedOrigins.includes(origin)) {
+    callback(null, { origin: true, ...extraOptions });
+  } else {
+    callback(new Error('Not allowed by CORS'));
+  }
+};
+
+app.use(cors(corsFor()));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
@@ -30,10 +47,7 @@ app.get('/health', (_req, res) => {
 });
 
 const io = new Server(httpServer, {
-  cors: {
-    origin: corsOrigin,
-    credentials: true
-  }
+  cors: corsFor({ credentials: true })
 });
 
 const sendRoom = (code) => {
