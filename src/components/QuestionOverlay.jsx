@@ -26,6 +26,7 @@ export function QuestionOverlay({
   const timerSecondsLeft = Math.ceil(timerRemainingMs / 1000);
 
   const pickedByTeamId = activeQuestion.selectedByTeamId;
+  const promptSize = activeQuestion.prompt.length > 180 ? ' long' : activeQuestion.prompt.length > 90 ? ' medium' : '';
 
   return (
     <div className="question-overlay">
@@ -41,7 +42,7 @@ export function QuestionOverlay({
           <span>Picked by: {teamMap[pickedByTeamId]?.name || '-'}</span>
         </div>
 
-        <h2 className="question-prompt">{activeQuestion.prompt}</h2>
+        <h2 className={`question-prompt${promptSize}`}>{activeQuestion.prompt}</h2>
 
         {isHost && (
           <>
