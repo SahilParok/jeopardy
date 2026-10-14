@@ -699,9 +699,25 @@ button:disabled {
   color: #f6f8ff;
 }
 
-.question-overlay-card input {
+.judge-hint {
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.judge-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.judge-actions button {
+  padding: 18px 12px;
   font-size: 1.15rem;
-  padding: 14px;
+}
+
+/* The team that picked the question: gold ring so it's easy to spot, buttons stay in fixed scoreboard order. */
+.judge-actions button.judge-picked {
+  box-shadow: 0 0 0 3px var(--gold-bright);
 }
 
 .result-flash {
@@ -1183,10 +1199,6 @@ button.danger {
 
   .question-prompt {
     font-size: clamp(1.7rem, 8.2vw, 2.5rem);
-  }
-
-  .question-overlay-card input {
-    font-size: 1rem;
   }
 
   .actions > * {

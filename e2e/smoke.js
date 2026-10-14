@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 
 // Multi-user smoke test: drives a real server + real Chromium contexts (host
 // + 2 players) through a full game — lobby, questions, teams, a full board
-// (daily double, a steal, a timer expiry), results, and restart — asserting
-// state stays in sync across every context.
+// (daily double, a steal, an "All wrong"), results, and restart — asserting
+// state stays in sync across every context. Judging is by the host's buttons
+// ("Team N correct" / "All wrong"), exactly as it is in a live game.
 //
 // Runs the production server (dist + Socket.IO) on port 3001, matching the
 // VITE_SERVER_URL baked into the build by the local .env, with CLIENT_URL
@@ -64,10 +65,6 @@ async function main() {
     await createCard.getByLabel('Your name').fill('Host');
     await createCard.getByLabel('Questions per player').fill('2');
     await createCard.getByLabel('Answer timer').selectOption(String(TIMER_SECONDS));
-    // finite mode (1 round) so a skipped/expired attempt truly exhausts and
-    // rotates the turn, rather than infinite mode's endless re-loop
-    await createCard.getByLabel('Round mode').selectOption('finite');
-    await createCard.getByLabel('Rounds per team').fill('1');
     const dailyDoubleBox = createCard.getByLabel('Enable Daily Double');
     if (!(await dailyDoubleBox.isChecked())) await dailyDoubleBox.check();
     await createCard.getByRole('button', { name: 'Create Game' }).click();
@@ -87,18 +84,14 @@ async function main() {
     log('both players joined, room state in sync');
 
     // --- submit questions (all three write their own board column) ---
-    const answers = {}; // playerName -> { [value]: correctAnswerText }
     const submitQuestions = async (page, name) => {
-      answers[name] = {};
       const cards = page.locator('.question-card');
       const count = await cards.count();
       for (let i = 0; i < count; i += 1) {
         const card = cards.nth(i);
         const value = await card.locator('select').inputValue();
-        const answerText = `${name}-answer-${value}`;
         await card.locator('textarea').fill(`${name}'s clue for $${value}`);
-        await card.locator('input').fill(answerText);
-        answers[name][value] = answerText;
+        await card.locator('input').fill(`${name}-answer-${value}`);
       }
       await page.getByRole('button', { name: 'Submit My Questions' }).click();
     };
@@ -131,10 +124,12 @@ async function main() {
         (await page.locator('.score-card').filter({ hasText: teamName }).locator('.score-value').textContent()).replace('$', '')
       );
 
-    const answeringTeam = async (page) => {
+    const pickedBy = async (page) => {
       const text = await page.locator('.active-meta').locator('span').nth(1).textContent();
-      return text.replace('Answering team:', '').trim();
+      return text.replace('Picked by:', '').trim();
     };
+
+    const judge = (label) => host.getByRole('button', { name: label, exact: true });
 
     // a flash banner appears after every attempt outcome and overlays the
     // board, blocking the next cell click — dismiss it explicitly rather
@@ -159,7 +154,6 @@ async function main() {
 
     for (let c = 0; c < columnCount; c += 1) {
       const column = columns.nth(c);
-      const ownerName = (await column.locator('.board-header').textContent()).trim();
       const cellCount = await column.locator('.board-cell').count();
 
       for (let v = 0; v < cellCount; v += 1) {
@@ -174,46 +168,48 @@ async function main() {
         const isDailyDouble = await host.locator('.daily-double-pill').isVisible();
         if (isDailyDouble) dailyDoubleSeen = true;
         const multiplier = isDailyDouble ? 2 : 1;
-        const correctAnswer = answers[ownerName][value];
-        assert.ok(correctAnswer, `no tracked answer for ${ownerName}/$${value}`);
+        const picker = await pickedBy(host);
 
         if (isFirstCellOverall) {
-          // --- steal: first team misses on purpose, next team gets it right ---
-          const firstResponder = await answeringTeam(host);
-          const scoreBefore = await scoreOf(host, firstResponder);
-          await host.getByLabel('Team answer').fill('deliberately wrong');
-          await host.getByRole('button', { name: 'Submit' }).click();
-          await host.locator('.active-meta').getByText(firstResponder).waitFor({ state: 'hidden' }).catch(() => {});
-          const secondResponder = await answeringTeam(host);
-          assert.notEqual(secondResponder, firstResponder, 'steal did not pass to the next team after a miss');
-          log(`steal confirmed: ${firstResponder} missed, ${secondResponder} got the steal chance`);
-
-          await host.getByLabel('Team answer').fill(correctAnswer);
-          await host.getByRole('button', { name: 'Submit' }).click();
-          await host.locator('.question-overlay').waitFor({ state: 'hidden' });
-          const scoreAfter = await scoreOf(host, secondResponder);
-          assert.equal(scoreAfter - (secondResponder === firstResponder ? scoreBefore : 0), Number(value) * multiplier, 'steal winner did not receive the expected points');
-        } else if (isLastCellOverall) {
-          // --- timer expiry: host does nothing, the client-side deadline must
-          // auto-skip and pass the turn (finite mode: exhaustion still needs
-          // the new responder to actually answer to close the board) ---
-          log(`waiting out the ${TIMER_SECONDS}s timer on the final cell to confirm auto-skip`);
-          const firstResponder = await answeringTeam(host);
-          const deadline = Date.now() + (TIMER_SECONDS + 10) * 1000;
-          let nextResponder = firstResponder;
-          while (nextResponder === firstResponder && Date.now() < deadline) {
-            await host.waitForTimeout(500);
-            nextResponder = await answeringTeam(host);
+          // Only the host judges: players see the question but never the buttons.
+          for (const page of [p2, p3]) {
+            assert.equal(await page.getByRole('button', { name: 'All wrong' }).count(), 0, 'a player can see the judge buttons');
           }
-          assert.notEqual(nextResponder, firstResponder, 'timer expiry did not auto-skip the turn');
-          log(`timer expiry auto-skipped with no host action: ${firstResponder} -> ${nextResponder}`);
-
-          await host.getByLabel('Team answer').fill(correctAnswer);
-          await host.getByRole('button', { name: 'Submit' }).click();
+          // The other team gets it right: a steal, and it earns them the next pick.
+          const thief = teamNames.find((name) => name !== picker);
+          const scoreBefore = await scoreOf(host, thief);
+          await judge(`${thief} correct`).click();
           await host.locator('.question-overlay').waitFor({ state: 'hidden' });
+          assert.equal(
+            (await scoreOf(host, thief)) - scoreBefore,
+            Number(value) * multiplier,
+            'the team marked correct did not receive the points'
+          );
+          // every context (not just the host) sees the scoring team take over the pick
+          await Promise.all(
+            players.map((page) => page.locator('.turn-indicator').filter({ hasText: thief }).waitFor({ timeout: 5000 }))
+          );
+          log(`steal confirmed: ${picker} picked, ${thief} got the points and the next pick`);
+        } else if (cellIndex === 1) {
+          // "All wrong": nobody scores, the answer is revealed, the pick moves to the next team.
+          const scoresBefore = await Promise.all(teamNames.map((name) => scoreOf(host, name)));
+          await judge('All wrong').click();
+          await host.locator('.question-overlay').waitFor({ state: 'hidden' });
+          const scoresAfter = await Promise.all(teamNames.map((name) => scoreOf(host, name)));
+          assert.deepEqual(scoresAfter, scoresBefore, 'All wrong must not award any points');
+          const headline = await host.locator('.result-flash-headline').textContent();
+          assert.match(headline, /UNANSWERED/, `unexpected banner after All wrong: "${headline}"`);
+          const nextPicker = teamNames.find((name) => name !== picker);
+          const turn = await host.locator('.turn-indicator').textContent();
+          assert.ok(turn.includes(nextPicker), `turn should move to ${nextPicker}, got "${turn}"`);
+          log(`all wrong confirmed: no points, pick moved ${picker} -> ${nextPicker}`);
         } else {
-          await host.getByLabel('Team answer').fill(correctAnswer);
-          await host.getByRole('button', { name: 'Submit' }).click();
+          if (isLastCellOverall) {
+            // The countdown is shown to the host (it only buzzes at zero, it never auto-judges).
+            const countdown = await host.locator('.timer-count').textContent();
+            assert.match(countdown, /^\d+s$|Time's up/, `unexpected timer text: "${countdown}"`);
+          }
+          await judge(`${picker} correct`).click();
           await host.locator('.question-overlay').waitFor({ state: 'hidden' });
         }
 

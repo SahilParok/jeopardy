@@ -663,6 +663,102 @@ test('gameStore: restarting a finished game preserves the original settings on t
   assert.equal(restarted.room.settings.questionsPerPlayer, 3);
 });
 
+// --- gameStore: host judging (resolveQuestion) -------------------------------------
+
+test('gameStore: resolveQuestion awards the chosen team the points and hands them the next pick', async () => {
+  const { code, hostPlayerId, room } = await setupGame({ playerCount: 4, mode: 'infinite' });
+  const [team1, , team3] = room.teams;
+  const cell = findOpenCell(room.board);
+  await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+
+  const { room: after, result } = await gameStore.resolveQuestion(code, hostPlayerId, team3.id);
+
+  assert.equal(result.isCorrect, true);
+  assert.equal(result.points, cell.value);
+  assert.equal(after.teams.find((team) => team.id === team3.id).score, cell.value);
+  assert.equal(after.teams.find((team) => team.id === team1.id).score, 0);
+  assert.equal(after.turnTeamId, team3.id);
+  assert.equal(after.activeQuestion, null);
+  assert.equal(after.history.at(-1).closedReason, 'solved');
+  assert.equal(after.history.at(-1).solvedByTeamId, team3.id);
+  assert.equal(after.events.at(-1).type, 'attempt-correct');
+});
+
+test('gameStore: resolveQuestion logs the teams ahead of the winner in steal order as misses', async () => {
+  const { code, hostPlayerId, room } = await setupGame({ playerCount: 4, mode: 'infinite' });
+  const [team1, team2, team3, team4] = room.teams;
+
+  // Team 3 wins the first cell and so picks the second: steal order is 3, 4, 1, 2.
+  const first = findOpenCell(room.board);
+  await gameStore.selectQuestion(code, hostPlayerId, first.playerId, first.value);
+  const { room: afterFirst } = await gameStore.resolveQuestion(code, hostPlayerId, team3.id);
+
+  const second = findOpenCell(afterFirst.board);
+  await gameStore.selectQuestion(code, hostPlayerId, second.playerId, second.value);
+  const { room: afterSecond } = await gameStore.resolveQuestion(code, hostPlayerId, team2.id);
+
+  const entry = afterSecond.history.at(-1);
+  assert.equal(entry.selectedByTeamId, team3.id);
+  assert.equal(entry.solvedByTeamId, team2.id);
+  assert.deepEqual(
+    entry.attempts.map((attempt) => [attempt.teamId, attempt.isCorrect]),
+    [[team3.id, false], [team4.id, false], [team1.id, false], [team2.id, true]]
+  );
+});
+
+test('gameStore: resolveQuestion with no team awards nobody, reveals the answer, and moves the pick along', async () => {
+  const { code, hostPlayerId, room } = await setupGame({ playerCount: 4, mode: 'infinite' });
+  const cell = findOpenCell(room.board);
+  await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+
+  const { room: after, result } = await gameStore.resolveQuestion(code, hostPlayerId, null);
+
+  assert.equal(result.isCorrect, false);
+  assert.equal(result.points, 0);
+  assert.ok(result.answer);
+  assert.deepEqual(after.teams.map((team) => team.score), [0, 0, 0, 0]);
+  assert.equal(after.turnTeamId, room.teams[1].id);
+  assert.equal(after.history.at(-1).closedReason, 'exhausted');
+  assert.equal(after.history.at(-1).attempts.length, 4);
+  assert.equal(after.history.at(-1).attempts.some((attempt) => attempt.isCorrect), false);
+  assert.equal(after.events.at(-1).type, 'question-exhausted');
+  assert.equal(after.events.at(-1).correctAnswer, result.answer);
+});
+
+test('gameStore: resolveQuestion doubles a Daily Double and finishes the game on the last cell', async () => {
+  const { code, hostPlayerId, room } = await setupGame({
+    playerCount: 2,
+    mode: 'infinite',
+    dailyDouble: true,
+    questionsPerPlayer: 1
+  });
+  const winner = room.teams[0];
+
+  let current = room;
+  while (current.phase !== 'finished') {
+    const cell = findOpenCell(current.board);
+    await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+    ({ room: current } = await gameStore.resolveQuestion(code, hostPlayerId, winner.id));
+  }
+
+  // One $100 cell plus one $100 Daily Double = $300.
+  assert.equal(current.teams.find((team) => team.id === winner.id).score, 300);
+  assert.equal(current.winnerTeamId, winner.id);
+});
+
+test('gameStore: resolveQuestion is host-only, needs an active question, and rejects unknown teams', async () => {
+  const { code, hostPlayerId, players, room } = await setupGame({ playerCount: 2, mode: 'infinite' });
+
+  await assert.rejects(() => gameStore.resolveQuestion(code, hostPlayerId, room.teams[0].id), /No active question/);
+
+  const cell = findOpenCell(room.board);
+  await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+
+  const nonHost = players.find((player) => player.id !== hostPlayerId);
+  await assert.rejects(() => gameStore.resolveQuestion(code, nonHost.id, room.teams[0].id), /Only host/);
+  await assert.rejects(() => gameStore.resolveQuestion(code, hostPlayerId, 'not-a-team'), /Team not found/);
+});
+
 // --- Persistence -----------------------------------------------------------------
 
 test('gameStore: serialize/deserialize round-trips hostDisconnectedAt and questionsPerPlayer', () => {

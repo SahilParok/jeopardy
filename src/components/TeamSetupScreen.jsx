@@ -21,7 +21,6 @@ export function TeamSetupScreen({
 
       <p className="settings-summary">
         {room.settings.questionsPerPlayer} questions/player ·{' '}
-        {room.settings.mode === 'finite' ? `${room.settings.rounds} round(s)` : 'Infinite rounds'} ·{' '}
         Timer {room.settings.timerSeconds > 0 ? `${room.settings.timerSeconds}s` : 'off'} ·{' '}
         Daily Double {room.settings.dailyDouble ? 'on' : 'off'}
       </p>

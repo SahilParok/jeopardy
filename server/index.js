@@ -146,6 +146,16 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('question:resolve', async ({ code, playerId, teamId } = {}, ack = () => {}) => {
+    try {
+      const { room, result } = await gameStore.resolveQuestion(code, playerId, teamId);
+      ack({ ok: true, result });
+      sendRoom(room.code);
+    } catch (error) {
+      ack({ ok: false, message: error.message });
+    }
+  });
+
   socket.on('question:skip', async ({ code, playerId } = {}, ack = () => {}) => {
     try {
       const { room, result } = await gameStore.skipCurrentTeam(code, playerId);
