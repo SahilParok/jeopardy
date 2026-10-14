@@ -108,7 +108,9 @@ async function main() {
     await Promise.all(players.map((page) => page.getByRole('heading', { name: 'Team Setup' }).waitFor()));
     log('advanced to team setup, in sync across contexts');
 
-    // --- shuffle teams (randomizer feature) + start ---
+    // --- three teams (one player each) so a stealer is never also the next team in order,
+    // then shuffle (randomizer feature) + start ---
+    await host.locator('.team-column input[type=number]').fill('3');
     await host.getByRole('button', { name: 'Shuffle Teams' }).click();
     const startBtn = host.getByRole('button', { name: 'Start Game' });
     await startBtn.waitFor();
@@ -175,8 +177,11 @@ async function main() {
           for (const page of [p2, p3]) {
             assert.equal(await page.getByRole('button', { name: 'All wrong' }).count(), 0, 'a player can see the judge buttons');
           }
-          // The other team gets it right: a steal, and it earns them the next pick.
-          const thief = teamNames.find((name) => name !== picker);
+          // A team two seats after the picker steals it. Stealing must NOT move the pick: it
+          // passes to the team right after the picker, so nobody gets skipped.
+          const seat = teamNames.indexOf(picker);
+          const thief = teamNames[(seat + 2) % teamNames.length];
+          const nextPicker = teamNames[(seat + 1) % teamNames.length];
           const scoreBefore = await scoreOf(host, thief);
           await judge(`${thief} correct`).click();
           await host.locator('.question-overlay').waitFor({ state: 'hidden' });
@@ -185,11 +190,11 @@ async function main() {
             Number(value) * multiplier,
             'the team marked correct did not receive the points'
           );
-          // every context (not just the host) sees the scoring team take over the pick
+          // every context (not just the host) sees the pick go to the team after the picker
           await Promise.all(
-            players.map((page) => page.locator('.turn-indicator').filter({ hasText: thief }).waitFor({ timeout: 5000 }))
+            players.map((page) => page.locator('.turn-indicator').filter({ hasText: nextPicker }).waitFor({ timeout: 5000 }))
           );
-          log(`steal confirmed: ${picker} picked, ${thief} got the points and the next pick`);
+          log(`steal confirmed: ${picker} picked, ${thief} got the points, the pick went to ${nextPicker}`);
         } else if (cellIndex === 1) {
           // "All wrong": nobody scores, the answer is revealed, the pick moves to the next team.
           const scoresBefore = await Promise.all(teamNames.map((name) => scoreOf(host, name)));
@@ -199,7 +204,7 @@ async function main() {
           assert.deepEqual(scoresAfter, scoresBefore, 'All wrong must not award any points');
           const headline = await host.locator('.result-flash-headline').textContent();
           assert.match(headline, /UNANSWERED/, `unexpected banner after All wrong: "${headline}"`);
-          const nextPicker = teamNames.find((name) => name !== picker);
+          const nextPicker = teamNames[(teamNames.indexOf(picker) + 1) % teamNames.length];
           const turn = await host.locator('.turn-indicator').textContent();
           assert.ok(turn.includes(nextPicker), `turn should move to ${nextPicker}, got "${turn}"`);
           log(`all wrong confirmed: no points, pick moved ${picker} -> ${nextPicker}`);

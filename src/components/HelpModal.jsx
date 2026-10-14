@@ -59,7 +59,8 @@ export function HelpModal({ onClose }) {
           <p>
             Every player writes their own questions, one per point value. Once everyone has submitted, the host
             starts team setup, players are grouped into teams, and the board is built from everyone's questions.
-            Teams take turns picking a cell on the board to answer, and whoever scores picks next.
+            Teams take turns picking a cell on the board, in order. A team keeps the pick only while it answers its
+            own questions right; a steal never changes whose turn it is.
           </p>
         </div>
 
@@ -71,13 +72,13 @@ export function HelpModal({ onClose }) {
           </p>
           <ul>
             <li>
-              <strong>Team N correct:</strong> that team gets the points and picks the next question. A team that
-              steals after others missed works the same way. Points can be fixed afterwards with Edit Scores if
-              the wrong button was tapped.
+              <strong>Team N correct:</strong> that team gets the points. If it was the team that picked, it
+              picks again; if it stole the question, the pick still goes to the team after the picker. Points
+              can be fixed afterwards with Edit Scores if the wrong button was tapped.
             </li>
             <li>
-              <strong>All wrong:</strong> no one gets the points, the answer is revealed, and the next team in
-              order picks.
+              <strong>All wrong:</strong> no one gets the points, the answer is revealed, and the pick goes to
+              the next team in order.
             </li>
           </ul>
         </div>

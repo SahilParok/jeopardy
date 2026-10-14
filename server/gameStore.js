@@ -276,11 +276,17 @@ const closeActiveQuestion = (room, { solvedByTeamId, closedReason }) => {
   if (solvedByTeamId) {
     const team = room.teams.find((entry) => entry.id === solvedByTeamId);
     team.score += points;
-    room.turnTeamId = team.id;
     teamName = team.name;
+  }
+
+  // The pick stays with the team that chose the question only if it answered it itself. A steal
+  // (or nobody scoring) passes the pick to the next team after the picker, so a lucky stealer can
+  // never jump the queue and every team keeps getting its turn in order.
+  if (solvedByTeamId === active.selectedByTeamId) {
+    room.turnTeamId = active.selectedByTeamId;
   } else {
-    const teamIndex = room.teams.findIndex((team) => team.id === active.selectedByTeamId);
-    room.turnTeamId = room.teams[(teamIndex + 1) % room.teams.length]?.id;
+    const pickerIndex = room.teams.findIndex((team) => team.id === active.selectedByTeamId);
+    room.turnTeamId = room.teams[(pickerIndex + 1) % room.teams.length]?.id;
   }
 
   room.history.push({
