@@ -7,10 +7,6 @@ export function HomeScreen({
   onCreateNameChange,
   questionsPerPlayer,
   onQuestionsPerPlayerChange,
-  roundMode,
-  onRoundModeChange,
-  roundCount,
-  onRoundCountChange,
   timerSeconds,
   onTimerSecondsChange,
   dailyDouble,
@@ -48,10 +44,6 @@ export function HomeScreen({
         <SettingsForm
           questionsPerPlayer={questionsPerPlayer}
           onQuestionsPerPlayerChange={onQuestionsPerPlayerChange}
-          mode={roundMode}
-          onModeChange={onRoundModeChange}
-          rounds={roundCount}
-          onRoundsChange={onRoundCountChange}
           timerSeconds={timerSeconds}
           onTimerSecondsChange={onTimerSecondsChange}
           dailyDouble={dailyDouble}

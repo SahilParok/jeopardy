@@ -361,9 +361,14 @@ const recordMiss = (room, teamId, answerText, skipped) => {
   return { isCorrect: false, skipped, exhausted: false, nextTeamId };
 };
 
-const buildAttemptOrder = (teams, selectedTeamId, settings) => {
+// Team ids in steal order: the selecting team first, then everyone else around the table.
+const stealOrder = (teams, selectedTeamId) => {
   const startIndex = teams.findIndex((team) => team.id === selectedTeamId);
-  const orderedTeams = [...teams.slice(startIndex), ...teams.slice(0, startIndex)].map((team) => team.id);
+  return [...teams.slice(startIndex), ...teams.slice(0, startIndex)].map((team) => team.id);
+};
+
+const buildAttemptOrder = (teams, selectedTeamId, settings) => {
+  const orderedTeams = stealOrder(teams, selectedTeamId);
 
   if (settings.mode === 'infinite') {
     return orderedTeams;
@@ -688,6 +693,38 @@ export const gameStore = {
     const result = recordMiss(room, teamId, answer, false);
     await persistRoom(room);
     return { room: publicRoom(room, hostPlayerId), result };
+  },
+
+  // The host judges in person: a team id awards that team the points, null means
+  // nobody got it. The steal order stands in for the attempts, so every team ahead
+  // of the winner (or every team, on "all wrong") is logged as a miss and the
+  // results screen's accuracy and toughest-question stats stay meaningful.
+  async resolveQuestion(rawCode, hostPlayerId, rawTeamId) {
+    const room = await ensureRoom(rawCode);
+    if (room.hostPlayerId !== hostPlayerId) throw new Error('Only host can judge questions');
+    if (!room.activeQuestion) throw new Error('No active question');
+
+    const active = room.activeQuestion;
+    const teamId = rawTeamId ?? null;
+    const order = stealOrder(room.teams, active.selectedByTeamId);
+    if (teamId !== null && !order.includes(teamId)) throw new Error('Team not found');
+
+    const attemptedIds = teamId ? order.slice(0, order.indexOf(teamId) + 1) : order;
+    attemptedIds.forEach((id) => {
+      const team = room.teams.find((entry) => entry.id === id);
+      active.attempts.push({ teamId: id, teamName: team.name, answer: '', isCorrect: id === teamId, skipped: false });
+    });
+
+    const { points, teamName, answer } = closeActiveQuestion(room, {
+      solvedByTeamId: teamId,
+      closedReason: teamId ? 'solved' : 'exhausted'
+    });
+
+    await persistRoom(room);
+    return {
+      room: publicRoom(room, hostPlayerId),
+      result: { isCorrect: Boolean(teamId), teamId, teamName, points, answer }
+    };
   },
 
   async skipCurrentTeam(rawCode, hostPlayerId) {

@@ -5,10 +5,6 @@ import { TIMER_OPTIONS } from '../constants.js';
 export function SettingsForm({
   questionsPerPlayer,
   onQuestionsPerPlayerChange,
-  mode,
-  onModeChange,
-  rounds,
-  onRoundsChange,
   timerSeconds,
   onTimerSecondsChange,
   dailyDouble,
@@ -27,28 +23,6 @@ export function SettingsForm({
           onChange={(event) => onQuestionsPerPlayerChange(event.target.value)}
         />
       </div>
-
-      <div className="control-field">
-        <label htmlFor="round-mode">Round mode</label>
-        <select id="round-mode" value={mode} onChange={(event) => onModeChange(event.target.value)}>
-          <option value="finite">Finite</option>
-          <option value="infinite">Infinite</option>
-        </select>
-      </div>
-
-      {mode === 'finite' && (
-        <div className="control-field">
-          <label htmlFor="rounds-per-team">Rounds per team</label>
-          <input
-            id="rounds-per-team"
-            type="number"
-            min="1"
-            max="10"
-            value={rounds}
-            onChange={(event) => onRoundsChange(event.target.value)}
-          />
-        </div>
-      )}
 
       <div className="control-field">
         <label htmlFor="answer-timer">Answer timer</label>

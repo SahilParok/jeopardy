@@ -58,10 +58,6 @@ export function LobbyScreen({
                 <SettingsForm
                   questionsPerPlayer={settingsDraft.questionsPerPlayer}
                   onQuestionsPerPlayerChange={(value) => onSettingsDraftChange('questionsPerPlayer', value)}
-                  mode={settingsDraft.mode}
-                  onModeChange={(value) => onSettingsDraftChange('mode', value)}
-                  rounds={settingsDraft.rounds}
-                  onRoundsChange={(value) => onSettingsDraftChange('rounds', value)}
                   timerSeconds={settingsDraft.timerSeconds}
                   onTimerSecondsChange={(value) => onSettingsDraftChange('timerSeconds', value)}
                   dailyDouble={settingsDraft.dailyDouble}

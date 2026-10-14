@@ -3,19 +3,13 @@ import { useEffect, useState } from 'react';
 export function QuestionOverlay({
   activeQuestion,
   isDailyDouble,
+  teams,
   teamMap,
   isHost,
   timerSeconds,
   deadline,
-  activeAnswerInput,
-  onAnswerInputChange,
-  onSubmitAttempt,
-  onOverrideIncorrect,
-  onPassQuestion,
-  onSkipTeam,
-  lastWrongAttempt,
-  busy,
-  answerMax
+  onResolve,
+  busy
 }) {
   // Own the 100ms timer tick locally so a running countdown only re-renders this
   // overlay, not the whole app tree.
@@ -31,6 +25,8 @@ export function QuestionOverlay({
   const timerPct = timerTotalMs ? (timerRemainingMs / timerTotalMs) * 100 : 0;
   const timerSecondsLeft = Math.ceil(timerRemainingMs / 1000);
 
+  const pickedByTeamId = activeQuestion.selectedByTeamId;
+
   return (
     <div className="question-overlay">
       <div className={`question-overlay-card${isDailyDouble ? ' daily-double' : ''}`}>
@@ -42,7 +38,7 @@ export function QuestionOverlay({
               ? `$${activeQuestion.value} → $${activeQuestion.value * activeQuestion.multiplier}`
               : `$${activeQuestion.value}`}
           </span>
-          <span>Answering team: {teamMap[activeQuestion.currentTeamId]?.name || '-'}</span>
+          <span>Picked by: {teamMap[pickedByTeamId]?.name || '-'}</span>
         </div>
 
         <h2 className="question-prompt">{activeQuestion.prompt}</h2>
@@ -54,42 +50,27 @@ export function QuestionOverlay({
                 <div className={`timer-track${timerPct < 20 ? ' danger' : timerPct < 50 ? ' warn' : ''}`}>
                   <div className="timer-bar" style={{ width: `${timerPct}%` }} />
                 </div>
-                <div className="timer-count">{timerSecondsLeft}s</div>
+                <div className="timer-count">{timerSecondsLeft > 0 ? `${timerSecondsLeft}s` : "Time's up!"}</div>
               </div>
             )}
 
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!activeAnswerInput.trim() || busy) return;
-                onSubmitAttempt();
-              }}
-            >
-              <input
-                value={activeAnswerInput}
-                maxLength={answerMax}
-                placeholder="Type team answer"
-                aria-label="Team answer"
-                autoFocus
-                onChange={(event) => onAnswerInputChange(event.target.value)}
-              />
-              <div className="actions">
-                <button type="submit" disabled={!activeAnswerInput.trim() || Boolean(busy)}>
-                  {busy === 'attempt' ? 'Submitting…' : 'Submit'}
+            <p className="judge-hint">Ask {activeQuestion.ownerPlayerName} who got it right:</p>
+            <div className="judge-actions">
+              {teams.map((team) => (
+                <button
+                  type="button"
+                  key={team.id}
+                  className={team.id === pickedByTeamId ? 'judge-picked' : undefined}
+                  disabled={Boolean(busy)}
+                  onClick={() => onResolve(team.id)}
+                >
+                  {team.name} correct
                 </button>
-                {lastWrongAttempt && (
-                  <button type="button" className="secondary" disabled={Boolean(busy)} onClick={onOverrideIncorrect}>
-                    Override Previous
-                  </button>
-                )}
-                <button type="button" className="secondary" disabled={Boolean(busy)} onClick={onPassQuestion}>
-                  Pass
-                </button>
-                <button type="button" className="secondary" disabled={Boolean(busy)} onClick={onSkipTeam}>
-                  Skip Question
-                </button>
-              </div>
-            </form>
+              ))}
+              <button type="button" className="danger" disabled={Boolean(busy)} onClick={() => onResolve(null)}>
+                All wrong
+              </button>
+            </div>
           </>
         )}
       </div>

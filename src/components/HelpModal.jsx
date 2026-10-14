@@ -59,26 +59,25 @@ export function HelpModal({ onClose }) {
           <p>
             Every player writes their own questions, one per point value. Once everyone has submitted, the host
             starts team setup, players are grouped into teams, and the board is built from everyone's questions.
-            Teams take turns picking a cell on the board to answer.
+            Teams take turns picking a cell on the board to answer, and whoever scores picks next.
           </p>
         </div>
 
         <div className="help-section">
           <h3>Answering a Question</h3>
+          <p>
+            Teams answer out loud and the question's author says whether it was right. The host then taps the
+            result:
+          </p>
           <ul>
             <li>
-              <strong>Submit:</strong> lock in your team's typed answer for judging.
+              <strong>Team N correct:</strong> that team gets the points and picks the next question. A team that
+              steals after others missed works the same way. Points can be fixed afterwards with Edit Scores if
+              the wrong button was tapped.
             </li>
             <li>
-              <strong>Override Previous:</strong> appears after an incorrect attempt, lets the host mark that
-              attempt correct instead if it was judged wrong by mistake.
-            </li>
-            <li>
-              <strong>Pass:</strong> give up the current team's turn on this question without ending it, so
-              the next team can attempt it. Happens automatically if the timer runs out.
-            </li>
-            <li>
-              <strong>Skip Question:</strong> close out the question entirely with no team credited.
+              <strong>All wrong:</strong> no one gets the points, the answer is revealed, and the next team in
+              order picks.
             </li>
           </ul>
         </div>
@@ -86,17 +85,16 @@ export function HelpModal({ onClose }) {
         <div className="help-section">
           <h3>Daily Double</h3>
           <p>
-            If enabled, one question on the board is a secret Daily Double. The team that selects it can wager
-            points before seeing the prompt.
+            If enabled, one question on the board is a secret Daily Double. It is revealed when a team selects
+            it, and the points it awards are doubled.
           </p>
         </div>
 
         <div className="help-section">
-          <h3>Timer &amp; Rounds</h3>
+          <h3>Timer</h3>
           <p>
-            The host can set an answer timer (or leave it off) and choose a round mode: <strong>Finite</strong>{' '}
-            plays a fixed number of rounds per team, while <strong>Infinite</strong> keeps the board open until
-            the host ends the game.
+            The host can set an answer countdown (or leave it off). It is shown on the host screen and sounds a
+            buzzer when it runs out; the host still decides who got it right.
           </p>
         </div>
 

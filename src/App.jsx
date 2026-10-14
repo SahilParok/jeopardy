@@ -13,7 +13,7 @@ import { TeamSetupScreen } from './components/TeamSetupScreen.jsx';
 import { BoardScreen } from './components/BoardScreen.jsx';
 import { useSound } from './useSound.js';
 import { teamById, tailSeq, toFlash, SOUND_BY_TYPE } from './flash.js';
-import { PROMPT_MAX, ANSWER_MAX, ATTEMPT_MAX, valuesForCount } from './constants.js';
+import { PROMPT_MAX, ANSWER_MAX, valuesForCount } from './constants.js';
 
 const STORAGE_KEY = 'jeopardy-session';
 
@@ -169,15 +169,12 @@ function App() {
   const [questionsPerPlayerInput, setQuestionsPerPlayerInput] = useState('5');
   const [teamCountInput, setTeamCountInput] = useState('2');
   const [teamConfig, setTeamConfig] = useState([]);
-  const [roundMode, setRoundMode] = useState('infinite');
-  const [roundCountInput, setRoundCountInput] = useState('1');
   const [dailyDoubleEnabled, setDailyDoubleEnabled] = useState(false);
   const [timerSecondsInput, setTimerSecondsInput] = useState('0');
 
   const [settingsEditMode, setSettingsEditMode] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState(null);
 
-  const [activeAnswerInput, setActiveAnswerInput] = useState('');
   const [scoreEditMode, setScoreEditMode] = useState(false);
   const [scoreDrafts, setScoreDrafts] = useState({});
 
@@ -204,7 +201,6 @@ function App() {
   const teamMap = useMemo(() => teamById(room?.teams || []), [room]);
   const activeQuestion = room?.activeQuestion || null;
   const questionKey = activeQuestion ? `${activeQuestion.ownerPlayerId}:${activeQuestion.value}` : null;
-  const attemptKey = activeQuestion ? `${questionKey}:${activeQuestion.attemptIndex}` : null;
   const isDailyDouble = Boolean(activeQuestion && activeQuestion.multiplier > 1);
 
   const run = async (key, action) => {
@@ -410,20 +406,16 @@ function App() {
     }
     setDeadline(Date.now() + room.settings.timerSeconds * 1000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attemptKey, isHost, room?.settings?.timerSeconds]);
+  }, [questionKey, isHost, room?.settings?.timerSeconds]);
 
-  // Fire once at the exact expiry moment instead of polling — the countdown
-  // display itself now lives (and ticks) entirely inside QuestionOverlay.
+  // Judging happens in person, so an expired timer only sounds the buzzer: the host
+  // still decides who (if anyone) got it right. Fires once at the exact expiry moment
+  // instead of polling; the countdown itself lives (and ticks) inside QuestionOverlay.
   useEffect(() => {
-    if (!deadline || !activeQuestion) return undefined;
-    const timeout = window.setTimeout(() => {
-      setDeadline(null);
-      play('timeUp');
-      advanceTeam();
-    }, Math.max(0, deadline - Date.now()));
+    if (!deadline) return undefined;
+    const timeout = window.setTimeout(() => play('timeUp'), Math.max(0, deadline - Date.now()));
     return () => window.clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deadline, activeQuestion]);
+  }, [deadline, play]);
 
   useEffect(() => {
     const count = room?.settings?.questionsPerPlayer;
@@ -458,14 +450,11 @@ function App() {
     setInvalidDraftIds(new Set());
     setTeamCountInput('2');
     setTeamConfig([]);
-    setRoundMode('infinite');
-    setRoundCountInput('1');
     setDailyDoubleEnabled(false);
     setTimerSecondsInput('0');
     setQuestionsPerPlayerInput('5');
     setSettingsEditMode(false);
     setSettingsDraft(null);
-    setActiveAnswerInput('');
     setScoreEditMode(false);
     setFlash(null);
     setFlashCursor(null);
@@ -488,8 +477,8 @@ function App() {
     const response = await call('room:create', {
       name: createName.trim(),
       settings: {
-        mode: roundMode,
-        rounds: roundMode === 'finite' ? Number(roundCountInput) : null,
+        mode: 'infinite',
+        rounds: null,
         dailyDouble: dailyDoubleEnabled,
         timerSeconds: Number(timerSecondsInput),
         questionsPerPlayer: Number(questionsPerPlayerInput)
@@ -560,8 +549,6 @@ function App() {
   const toggleSettingsEdit = () => {
     if (!settingsEditMode) {
       setSettingsDraft({
-        mode: room.settings.mode,
-        rounds: room.settings.rounds ?? 1,
         dailyDouble: room.settings.dailyDouble,
         timerSeconds: room.settings.timerSeconds,
         questionsPerPlayer: room.settings.questionsPerPlayer
@@ -578,8 +565,8 @@ function App() {
         code: room.code,
         playerId: session.playerId,
         settings: {
-          mode: settingsDraft.mode,
-          rounds: settingsDraft.mode === 'finite' ? Number(settingsDraft.rounds) : null,
+          mode: 'infinite',
+          rounds: null,
           dailyDouble: settingsDraft.dailyDouble,
           timerSeconds: Number(settingsDraft.timerSeconds),
           questionsPerPlayer: Number(settingsDraft.questionsPerPlayer)
@@ -662,26 +649,13 @@ function App() {
 
   const selectQuestion = (ownerPlayerId, value) =>
     run('select', async () => {
-      setActiveAnswerInput('');
       await call('question:select', { code: room.code, playerId: session.playerId, ownerPlayerId, value });
       play('select');
     });
 
-  const submitAttempt = () =>
-    run('attempt', async () => {
-      const answer = activeAnswerInput;
-      setActiveAnswerInput('');
-      await call('question:attempt', { code: room.code, playerId: session.playerId, answer });
-    });
-
-  const advanceTeam = () =>
-    run('skip', () => call('question:skip', { code: room.code, playerId: session.playerId }));
-
-  const overrideIncorrect = () =>
-    run('override', () => call('question:override', { code: room.code, playerId: session.playerId }));
-
-  const closeQuestion = () =>
-    run('pass', () => call('question:pass', { code: room.code, playerId: session.playerId }));
+  // teamId awards that team the points; null means nobody got it ("All wrong").
+  const resolveQuestion = (teamId) =>
+    run('resolve', () => call('question:resolve', { code: room.code, playerId: session.playerId, teamId }));
 
   const kickPlayer = (targetPlayerId, targetName) => {
     if (!window.confirm(`Remove ${targetName} from the game?`)) return undefined;
@@ -749,10 +723,6 @@ function App() {
           onCreateNameChange={setCreateName}
           questionsPerPlayer={questionsPerPlayerInput}
           onQuestionsPerPlayerChange={setQuestionsPerPlayerInput}
-          roundMode={roundMode}
-          onRoundModeChange={setRoundMode}
-          roundCount={roundCountInput}
-          onRoundCountChange={setRoundCountInput}
           timerSeconds={timerSecondsInput}
           onTimerSecondsChange={setTimerSecondsInput}
           dailyDouble={dailyDoubleEnabled}
@@ -909,19 +879,13 @@ function App() {
         <QuestionOverlay
           activeQuestion={activeQuestion}
           isDailyDouble={isDailyDouble}
+          teams={room.teams}
           teamMap={teamMap}
           isHost={isHost}
           timerSeconds={room.settings.timerSeconds}
           deadline={deadline}
-          activeAnswerInput={activeAnswerInput}
-          onAnswerInputChange={setActiveAnswerInput}
-          onSubmitAttempt={submitAttempt}
-          onOverrideIncorrect={overrideIncorrect}
-          onPassQuestion={advanceTeam}
-          onSkipTeam={closeQuestion}
-          lastWrongAttempt={room.lastWrongAttempt}
+          onResolve={resolveQuestion}
           busy={busy}
-          answerMax={ATTEMPT_MAX}
         />
       )}
 
