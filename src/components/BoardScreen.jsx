@@ -22,7 +22,7 @@ export function BoardScreen({
 
       <div className="score-row">{room.teams.map((team) => renderScoreCard(team, true))}</div>
 
-      <div className="board-grid">
+      <div className="board-grid" style={{ '--board-cols': room.board.columns.length }}>
         {room.board.columns.map((column) => (
           <div key={column.playerId} className="board-column">
             <div className="board-header">{column.playerName}</div>

@@ -622,10 +622,13 @@ button:disabled {
   min-width: 120px;
 }
 
+/* One track per player, always. auto-fit counted each track at its 220px max, so 8 players wrapped
+   into two stacked rows of columns (5 + 3) at any screen size. */
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 220px));
-  justify-content: center;
+  grid-template-columns: repeat(var(--board-cols, 5), minmax(0, 1fr));
+  width: min(100%, calc(var(--board-cols, 5) * 240px));
+  margin-inline: auto;
   gap: 10px;
 }
 
@@ -641,10 +644,12 @@ button:disabled {
   border: 1px solid #5069de;
   padding: 10px;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .board-cell {
-  min-height: 86px;
+  /* shrinks on short screens (a 720p TV) so all five rows stay visible */
+  min-height: clamp(52px, 9.5vh, 86px);
   border: 1px solid #6a84f3;
   border-radius: 10px;
   background: linear-gradient(180deg, #16359e, #0f2a80);
