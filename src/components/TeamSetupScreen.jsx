@@ -50,10 +50,7 @@ export function TeamSetupScreen({
                 const assignedTeam = teamConfig.find((team) => team.playerIds.includes(player.id));
                 return (
                   <div className="player-row" key={player.id}>
-                    <span>
-                      {player.name}
-                      {!player.isConnected ? ' (offline)' : ''}
-                    </span>
+                    <span>{player.name}</span>
                     <select value={assignedTeam?.id || ''} onChange={(event) => onMovePlayerTeam(player.id, event.target.value)}>
                       {teamConfig.map((team) => (
                         <option key={team.id} value={team.id}>
@@ -103,10 +100,7 @@ export function TeamSetupScreen({
             <h3>Players</h3>
             {room.players.map((player) => (
               <div className="player-row" key={player.id}>
-                <span>
-                  {player.name}
-                  {!player.isConnected ? ' (offline)' : ''}
-                </span>
+                <span>{player.name}</span>
               </div>
             ))}
           </div>
