@@ -15,6 +15,12 @@ export function FlashBanner({ flash, onDismiss }) {
         )}
         <div className="result-flash-headline">{flash.headline}</div>
         {flash.detail && <div className="result-flash-detail">{flash.detail}</div>}
+        {flash.answer && (
+          <div className={`result-flash-answer${flash.answer.length > 70 ? ' long' : ''}`}>
+            <span className="result-flash-answer-label">Answer</span>
+            <span className="result-flash-answer-text">{flash.answer}</span>
+          </div>
+        )}
       </div>
     </div>
   );

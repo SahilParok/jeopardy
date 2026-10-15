@@ -72,6 +72,19 @@ export function QuestionOverlay({
                 All wrong
               </button>
             </div>
+            {teamMap[pickedByTeamId] && (
+              <div className="judge-retry">
+                <span>Everyone missed and {teamMap[pickedByTeamId].name} got it on a later go-round?</span>
+                <button
+                  type="button"
+                  className="subtle"
+                  disabled={Boolean(busy)}
+                  onClick={() => onResolve(pickedByTeamId, { pickerRetried: true })}
+                >
+                  {teamMap[pickedByTeamId].name} correct, not 1st try
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

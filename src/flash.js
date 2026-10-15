@@ -6,7 +6,13 @@ export const toFlash = (event) => {
   switch (event.type) {
     case 'attempt-correct':
     case 'override-correct':
-      return { tone: 'correct', headline: 'CORRECT!', detail: `${event.teamName} +$${event.points}`, closable: true };
+      return {
+        tone: 'correct',
+        headline: 'CORRECT!',
+        detail: `${event.teamName} +$${event.points}`,
+        answer: event.correctAnswer,
+        closable: true
+      };
     case 'attempt-incorrect':
       return {
         tone: 'incorrect',
@@ -23,14 +29,14 @@ export const toFlash = (event) => {
       return {
         tone: 'incorrect',
         headline: 'PASSED',
-        detail: `Answer: ${event.correctAnswer}`,
+        answer: event.correctAnswer,
         closable: true
       };
     case 'question-exhausted':
       return {
         tone: 'incorrect',
         headline: 'QUESTION UNANSWERED',
-        detail: `Answer: ${event.correctAnswer}`,
+        answer: event.correctAnswer,
         closable: true
       };
     case 'daily-double':

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 // Multi-user smoke test: drives a real server + real Chromium contexts (host
 // + 2 players) through a full game — lobby, questions, teams, a full board
-// (daily double, a steal, an "All wrong"), results, and restart — asserting
+// (daily double, a steal, a picker who scores on a later go-round, an "All wrong"), results, and restart — asserting
 // state stays in sync across every context. Judging is by the host's buttons
 // ("Team N correct" / "All wrong"), exactly as it is in a live game.
 //
@@ -133,6 +133,14 @@ async function main() {
 
     const judge = (label) => host.getByRole('button', { name: label, exact: true });
 
+    // The question author's answer must be on the result banner after every outcome, not just on
+    // "All wrong": the clue is "<Name>'s clue for $V" and its answer was submitted as "<Name>-answer-V".
+    const expectedAnswerFor = (prompt) => {
+      const match = prompt.match(/^(.*)'s clue for \$(\d+)$/);
+      assert.ok(match, `unexpected prompt: "${prompt}"`);
+      return `${match[1]}-answer-${match[2]}`;
+    };
+
     // a flash banner appears after every attempt outcome and overlays the
     // board, blocking the next cell click — dismiss it explicitly rather
     // than guess at its auto-fade timing
@@ -171,6 +179,10 @@ async function main() {
         if (isDailyDouble) dailyDoubleSeen = true;
         const multiplier = isDailyDouble ? 2 : 1;
         const picker = await pickedBy(host);
+        const expectedAnswer = expectedAnswerFor(await host.locator('.question-prompt').textContent());
+        for (const page of [p2, p3]) {
+          assert.equal(await page.getByText(expectedAnswer).count(), 0, 'a player can see the answer while the question is open');
+        }
 
         if (isFirstCellOverall) {
           // Only the host judges: players see the question but never the buttons.
@@ -202,12 +214,31 @@ async function main() {
           await host.locator('.question-overlay').waitFor({ state: 'hidden' });
           const scoresAfter = await Promise.all(teamNames.map((name) => scoreOf(host, name)));
           assert.deepEqual(scoresAfter, scoresBefore, 'All wrong must not award any points');
+          // A Daily Double cell shows its own banner first; the result banner queues behind it.
+          await host.locator('.result-flash-answer').waitFor({ timeout: 5000 });
           const headline = await host.locator('.result-flash-headline').textContent();
           assert.match(headline, /UNANSWERED/, `unexpected banner after All wrong: "${headline}"`);
           const nextPicker = teamNames[(teamNames.indexOf(picker) + 1) % teamNames.length];
           const turn = await host.locator('.turn-indicator').textContent();
           assert.ok(turn.includes(nextPicker), `turn should move to ${nextPicker}, got "${turn}"`);
           log(`all wrong confirmed: no points, pick moved ${picker} -> ${nextPicker}`);
+        } else if (cellIndex === 2) {
+          // Missed first, everyone else missed, then the picker got it on a later go-round: the
+          // points still count but it was a steal, so the pick moves to the next team.
+          const seat = teamNames.indexOf(picker);
+          const nextPicker = teamNames[(seat + 1) % teamNames.length];
+          const scoreBefore = await scoreOf(host, picker);
+          await judge(`${picker} correct, not 1st try`).click();
+          await host.locator('.question-overlay').waitFor({ state: 'hidden' });
+          assert.equal(
+            (await scoreOf(host, picker)) - scoreBefore,
+            Number(value) * multiplier,
+            'the picker did not receive the points on a later go-round'
+          );
+          await Promise.all(
+            players.map((page) => page.locator('.turn-indicator').filter({ hasText: nextPicker }).waitFor({ timeout: 5000 }))
+          );
+          log(`retry confirmed: ${picker} scored on a later go-round, the pick moved to ${nextPicker}`);
         } else {
           if (isLastCellOverall) {
             // The countdown is shown to the host (it only buzzes at zero, it never auto-judges).
@@ -216,7 +247,21 @@ async function main() {
           }
           await judge(`${picker} correct`).click();
           await host.locator('.question-overlay').waitFor({ state: 'hidden' });
+          // First-try answer to its own question: the picker keeps the pick (the final cell ends the
+          // game, so there is no turn indicator left to check).
+          if (!isLastCellOverall) {
+            await host.locator('.turn-indicator').filter({ hasText: picker }).waitFor({ timeout: 5000 });
+            log(`first try confirmed: ${picker} answered its own question and kept the pick`);
+          }
         }
+
+        // The banner (host's screen, including the very last question) shows the author's answer.
+        await host.locator('.result-flash-answer-text').waitFor({ timeout: 5000 });
+        assert.equal(
+          (await host.locator('.result-flash-answer-text').textContent()).trim(),
+          expectedAnswer,
+          'the result banner did not show the answer the author wrote'
+        );
 
         await dismissFlash(host);
         cellIndex += 1;

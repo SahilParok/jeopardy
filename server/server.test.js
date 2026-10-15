@@ -783,6 +783,77 @@ test('gameStore: resolveQuestion is host-only, needs an active question, and rej
   await assert.rejects(() => gameStore.resolveQuestion(code, hostPlayerId, 'not-a-team'), /Team not found/);
 });
 
+test('gameStore: a picker that missed first and scores on a later go-round scores but loses the pick', async () => {
+  const { code, hostPlayerId, room } = await setupGame({ playerCount: 8, mode: 'infinite' });
+  const [t1, t2] = room.teams;
+  const cell = findOpenCell(room.board);
+  await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+
+  // Team 1 missed, Teams 2-4 missed, the table allowed another go-round, Team 1 got it.
+  const { room: after } = await gameStore.resolveQuestion(code, hostPlayerId, t1.id, { pickerRetried: true });
+
+  assert.equal(after.teams.find((team) => team.id === t1.id).score, cell.value, 'the points still count');
+  assert.equal(after.turnTeamId, t2.id, 'but it was a steal, so the pick moves to the next team');
+  const entry = after.history.at(-1);
+  assert.equal(entry.closedReason, 'solved');
+  assert.equal(entry.solvedByTeamId, t1.id);
+  assert.equal(entry.pickerRetried, true);
+  assert.deepEqual(
+    entry.attempts.map((attempt) => [attempt.teamId, attempt.isCorrect]),
+    [...room.teams.map((team) => [team.id, false]), [t1.id, true]],
+    'every team is logged as a miss, then the picker as the correct attempt'
+  );
+});
+
+test('gameStore: pickerRetried is ignored unless the picker is the one who scored', async () => {
+  const { code, hostPlayerId, room } = await setupGame({ playerCount: 8, mode: 'infinite' });
+  const [t1, t2, t3] = room.teams;
+
+  let cell = findOpenCell(room.board);
+  await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+  // A different team scoring is already a steal; the flag changes nothing about the attempt log.
+  const { room: afterSteal } = await gameStore.resolveQuestion(code, hostPlayerId, t3.id, { pickerRetried: true });
+  assert.equal(afterSteal.turnTeamId, t2.id);
+  assert.equal(afterSteal.history.at(-1).pickerRetried, false);
+  assert.deepEqual(
+    afterSteal.history.at(-1).attempts.map((attempt) => attempt.teamId),
+    [t1.id, t2.id, t3.id]
+  );
+
+  // Nobody scoring with the flag set is still a plain "all wrong".
+  cell = findOpenCell(afterSteal.board);
+  await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+  const { room: afterWrong } = await gameStore.resolveQuestion(code, hostPlayerId, null, { pickerRetried: true });
+  assert.equal(afterWrong.history.at(-1).pickerRetried, false);
+  assert.equal(afterWrong.history.at(-1).attempts.length, room.teams.length);
+
+  // And without the flag the picker still keeps the pick on a first-try answer.
+  cell = findOpenCell(afterWrong.board);
+  await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+  const pickerId = afterWrong.turnTeamId;
+  const { room: afterOwn } = await gameStore.resolveQuestion(code, hostPlayerId, pickerId);
+  assert.equal(afterOwn.turnTeamId, pickerId);
+});
+
+test('gameStore: every close event carries the question author\'s answer for the result banner', async () => {
+  const { code, hostPlayerId, room } = await setupGame({ playerCount: 4, mode: 'infinite' });
+  const t2 = room.teams[1];
+
+  const cell = findOpenCell(room.board);
+  await gameStore.selectQuestion(code, hostPlayerId, cell.playerId, cell.value);
+  const { room: afterRight, result: right } = await gameStore.resolveQuestion(code, hostPlayerId, t2.id);
+  assert.equal(afterRight.events.at(-1).type, 'attempt-correct');
+  assert.ok(right.answer);
+  assert.equal(afterRight.events.at(-1).correctAnswer, right.answer);
+  assert.equal(afterRight.history.at(-1).answer, right.answer);
+
+  const next = findOpenCell(afterRight.board);
+  await gameStore.selectQuestion(code, hostPlayerId, next.playerId, next.value);
+  const { room: afterWrong, result: wrong } = await gameStore.resolveQuestion(code, hostPlayerId, null);
+  assert.equal(afterWrong.events.at(-1).type, 'question-exhausted');
+  assert.equal(afterWrong.events.at(-1).correctAnswer, wrong.answer);
+});
+
 // --- Persistence -----------------------------------------------------------------
 
 test('gameStore: serialize/deserialize round-trips hostDisconnectedAt and questionsPerPlayer', () => {
