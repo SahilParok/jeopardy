@@ -265,7 +265,7 @@ const CLOSE_EVENT_TYPES = {
   exhausted: 'question-exhausted'
 };
 
-const closeActiveQuestion = (room, { solvedByTeamId, closedReason }) => {
+const closeActiveQuestion = (room, { solvedByTeamId, closedReason, pickerRetried = false }) => {
   const active = room.activeQuestion;
   const { cell } = findCell(room, active.ownerPlayerId, active.value);
   cell.status = 'closed';
@@ -279,10 +279,11 @@ const closeActiveQuestion = (room, { solvedByTeamId, closedReason }) => {
     teamName = team.name;
   }
 
-  // The pick stays with the team that chose the question only if it answered it itself. A steal
-  // (or nobody scoring) passes the pick to the next team after the picker, so a lucky stealer can
-  // never jump the queue and every team keeps getting its turn in order.
-  if (solvedByTeamId === active.selectedByTeamId) {
+  // The pick stays with the team that chose the question only if it answered it itself on its first
+  // try. A steal (or nobody scoring) passes the pick to the next team after the picker, so a lucky
+  // stealer can never jump the queue and every team keeps getting its turn in order. A picker that
+  // missed, watched everyone else miss, and got it on a later go-round counts as a steal too.
+  if (solvedByTeamId === active.selectedByTeamId && !pickerRetried) {
     room.turnTeamId = active.selectedByTeamId;
   } else {
     const pickerIndex = room.teams.findIndex((team) => team.id === active.selectedByTeamId);
@@ -302,6 +303,7 @@ const closeActiveQuestion = (room, { solvedByTeamId, closedReason }) => {
     solvedByTeamName: teamName,
     pointsAwarded: points,
     closedReason,
+    pickerRetried,
     attempts: active.attempts,
     startedAt: active.startedAt,
     closedAt: Date.now()
@@ -705,7 +707,11 @@ export const gameStore = {
   // nobody got it. The steal order stands in for the attempts, so every team ahead
   // of the winner (or every team, on "all wrong") is logged as a miss and the
   // results screen's accuracy and toughest-question stats stay meaningful.
-  async resolveQuestion(rawCode, hostPlayerId, rawTeamId) {
+  //
+  // pickerRetried: the picking team missed first, everyone else missed too, and the table agreed to
+  // another go-round where the picker finally got it. It still scores, but it was a steal, not a first
+  // try, so the pick moves on. Only meaningful when teamId is the picker; ignored otherwise.
+  async resolveQuestion(rawCode, hostPlayerId, rawTeamId, { pickerRetried = false } = {}) {
     const room = await ensureRoom(rawCode);
     if (room.hostPlayerId !== hostPlayerId) throw new Error('Only host can judge questions');
     if (!room.activeQuestion) throw new Error('No active question');
@@ -715,15 +721,20 @@ export const gameStore = {
     const order = stealOrder(room.teams, active.selectedByTeamId);
     if (teamId !== null && !order.includes(teamId)) throw new Error('Team not found');
 
-    const attemptedIds = teamId ? order.slice(0, order.indexOf(teamId) + 1) : order;
-    attemptedIds.forEach((id) => {
+    const retried = Boolean(pickerRetried) && teamId !== null && teamId === active.selectedByTeamId;
+    let attemptedIds = teamId ? order.slice(0, order.indexOf(teamId) + 1) : order;
+    // Everyone missed once, then the picker is back for the correct attempt.
+    if (retried) attemptedIds = [...order, teamId];
+    attemptedIds.forEach((id, index) => {
       const team = room.teams.find((entry) => entry.id === id);
-      active.attempts.push({ teamId: id, teamName: team.name, answer: '', isCorrect: id === teamId, skipped: false });
+      const isCorrect = teamId !== null && index === attemptedIds.length - 1;
+      active.attempts.push({ teamId: id, teamName: team.name, answer: '', isCorrect, skipped: false });
     });
 
     const { points, teamName, answer } = closeActiveQuestion(room, {
       solvedByTeamId: teamId,
-      closedReason: teamId ? 'solved' : 'exhausted'
+      closedReason: teamId ? 'solved' : 'exhausted',
+      pickerRetried: retried
     });
 
     await persistRoom(room);

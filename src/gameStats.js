@@ -25,7 +25,9 @@ const buildSteals = (history) => {
   const counts = new Map();
   history.forEach((entry) => {
     const solved = entry.closedReason === 'solved' || entry.closedReason === 'overridden';
-    if (!solved || entry.solvedByTeamId === entry.selectedByTeamId) return;
+    // A picker that missed first and scored on a later go-round stole it back; that counts too.
+    const firstTryByPicker = entry.solvedByTeamId === entry.selectedByTeamId && !entry.pickerRetried;
+    if (!solved || firstTryByPicker) return;
     counts.set(entry.solvedByTeamId, (counts.get(entry.solvedByTeamId) || 0) + 1);
   });
   return counts;

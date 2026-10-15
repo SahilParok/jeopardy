@@ -146,9 +146,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('question:resolve', async ({ code, playerId, teamId } = {}, ack = () => {}) => {
+  socket.on('question:resolve', async ({ code, playerId, teamId, pickerRetried } = {}, ack = () => {}) => {
     try {
-      const { room, result } = await gameStore.resolveQuestion(code, playerId, teamId);
+      const { room, result } = await gameStore.resolveQuestion(code, playerId, teamId, { pickerRetried });
       ack({ ok: true, result });
       sendRoom(room.code);
     } catch (error) {

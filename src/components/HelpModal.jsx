@@ -74,7 +74,13 @@ export function HelpModal({ onClose }) {
             <li>
               <strong>Team N correct:</strong> that team gets the points. If it was the team that picked, it
               picks again; if it stole the question, the pick still goes to the team after the picker. Points
-              can be fixed afterwards with Edit Scores if the wrong button was tapped.
+              can be fixed afterwards with Edit Scores if the wrong button was tapped. The result banner shows
+              the answer the question's author wrote.
+            </li>
+            <li>
+              <strong>Picking team correct, not 1st try:</strong> for when the picker missed, everyone else
+              missed too, and the table allowed another go-round where the picker got it. They still get the
+              points, but it counts as a steal, so the pick moves to the next team.
             </li>
             <li>
               <strong>All wrong:</strong> no one gets the points, the answer is revealed, and the pick goes to

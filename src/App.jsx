@@ -246,15 +246,25 @@ function App() {
       setFlashCursor(tail);
       return;
     }
-    // Game-over always preempts whatever's showing, so the last question's banner never bleeds into
-    // Results. It clears any stale banner but shows none of its own — the Results screen's hero
-    // heading already announces the winner, and a floating banner would just cover it.
+    // Game-over always preempts whatever's showing, so a stale banner never bleeds into Results.
+    // The one exception is the host's screen (the TV): the final question's result carries the last
+    // answer anyone will see, so it stays up as a closable banner over Results until it is dismissed.
+    // Players' phones still go straight to Results.
     const gameOver = events.find((event) => event.seq > flashCursor && event.type === 'game-over');
     if (gameOver) {
       setFlashCursor(gameOver.seq);
       const soundName = SOUND_BY_TYPE[gameOver.type];
       if (soundName) play(soundName);
-      setFlash(null);
+      const finalClose = isHost
+        ? events
+            .filter((event) => event.seq > flashCursor && event.seq < gameOver.seq && toFlash(event)?.closable)
+            .pop()
+        : null;
+      setFlash(
+        finalClose
+          ? { id: finalClose.seq, ...toFlash(finalClose), questionKey: null, visible: true }
+          : null
+      );
       return;
     }
     if (flash) return;
@@ -272,7 +282,7 @@ function App() {
       questionKey: next.ownerPlayerId ? `${next.ownerPlayerId}:${next.value}` : null,
       visible: true
     });
-  }, [room?.events, flash, flashCursor, play]);
+  }, [room?.events, flash, flashCursor, play, isHost]);
 
   // Flash lifecycle: closable banners stay up until manually dismissed; others
   // auto-dismiss after a couple seconds. Either way, a short exit fade follows.
@@ -654,8 +664,10 @@ function App() {
     });
 
   // teamId awards that team the points; null means nobody got it ("All wrong").
-  const resolveQuestion = (teamId) =>
-    run('resolve', () => call('question:resolve', { code: room.code, playerId: session.playerId, teamId }));
+  const resolveQuestion = (teamId, { pickerRetried = false } = {}) =>
+    run('resolve', () =>
+      call('question:resolve', { code: room.code, playerId: session.playerId, teamId, pickerRetried })
+    );
 
   const kickPlayer = (targetPlayerId, targetName) => {
     if (!window.confirm(`Remove ${targetName} from the game?`)) return undefined;
